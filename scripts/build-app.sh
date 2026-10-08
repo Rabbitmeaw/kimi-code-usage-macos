@@ -21,8 +21,8 @@ cat > "$APP_PATH/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>KimiUsage</string>
 <key>CFBundleIdentifier</key><string>com.yokinri.kimi-usage</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
-<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.2.1</string>
+<key>CFBundleVersion</key><string>3</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
@@ -37,8 +37,8 @@ cat > "$WATCHER_PATH/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>KimiUsageWatcher</string>
 <key>CFBundleIdentifier</key><string>com.yokinri.kimi-usage.watcher</string>
 <key>CFBundlePackageType</key><string>APPL</string>
-<key>CFBundleShortVersionString</key><string>0.2.0</string>
-<key>CFBundleVersion</key><string>2</string>
+<key>CFBundleShortVersionString</key><string>0.2.1</string>
+<key>CFBundleVersion</key><string>3</string>
 <key>LSMinimumSystemVersion</key><string>13.0</string>
 <key>LSBackgroundOnly</key><true/>
 </dict></plist>

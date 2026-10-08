@@ -15,11 +15,12 @@ zsh scripts/build-app.sh
 
 构建产物为 `dist/Kimi Usage.app`。更新运行中的版本时可用 `APP_OUTPUT_PATH` 指定新的打包位置，避免覆盖正在运行的可执行文件。脚本使用 Swift release 构建，移除调试符号和本机源码路径，将 MIT 与 Unicode 许可复制至 App 资源目录，再执行签名与签名校验。默认使用 ad-hoc 签名，也可通过 `CODESIGN_IDENTITY` 指定签名身份。当前发布包未进行 Apple 公证。
 
-`Tests/CoreChecks.swift` 包含 27 组核心检查，由独立 Swift runner 执行，无需 XCTest。覆盖内容包括：
+`Tests/CoreChecks.swift` 包含 33 组核心检查，由独立 Swift runner 执行，无需 XCTest。覆盖内容包括：
 
 - Desktop usage 数据结构、错误状态、缺失额度和 loopback 地址过滤。
 - 重置时间解析、按分钟向上取整，以及小时／天数格式。
 - 多显示器坐标转换、四角边界、目标窗口过滤和安装样式计算。
+- 样式缓存命中、文件修改时间／大小／引用变更、显示缩放、安装路径变化与失败恢复。
 - 3～6 档颜色映射、边界选择、单 emoji 校验及无效输入。
 - 旧版配置兼容、背景颜色／不透明度校验、自动跟随默认值和显示设置 JSON 往返。
 
@@ -68,7 +69,9 @@ watcher 通过 NSWorkspace 的应用事件观察 Kimi：初始检查时 Kimi 已
 
 卡片尺寸为 203×117pt。固定四角时隐藏标题、跟随 Kimi 窗口，失去前台焦点后允许其他应用正常遮挡；自由模式保留标题、使用浮动窗口层级并支持整卡拖动。右键菜单由独立 NSMenu 显示，可展开到卡片边界外。
 
-无需 Accessibility 或屏幕录制权限。窗口定位基于系统窗口列表；上下留距读取本机 Kimi 安装包 `Contents/Resources/desktop-dist/index.html` 引用的样式，计算顶部栏、账户区域尺寸、内边距和边框。每 30 秒以及 Kimi 实例或显示器变化时重新读取。
+v0.2.1 将固定模式窗口定位间隔调整为1秒，容差0.1秒；移动、缩放后约每秒更新位置，应用激活、隐藏、终止通知仍立即处理。自由模式及 macOS 会话不活跃时移除定位计时器，恢复固定模式或会话时重新创建并立即定位。定位先筛选目标进程与普通窗口，再解析几何；单次定位复用每块屏幕的边界；窗口排序索引仅在非活跃分支计算。现有位置去重与前台层级规则保留。
+
+无需 Accessibility 或屏幕录制权限。窗口定位基于系统窗口列表；上下留距读取本机 Kimi 安装包 `Contents/Resources/desktop-dist/index.html` 引用的样式，计算顶部栏、账户区域尺寸、内边距和边框。固定模式且 Kimi 窗口可见时，约每30秒检查文件元数据；实例或显示缩放变化触发提前检查。安装路径、显示缩放或HTML及引用CSS的修改时间、大小变化时，重新读取解析；命中缓存时复用最近一次成功结果。读取失败可重试，不写死栏高。
 
 布局解析以 Kimi Code 1.0.4 默认页面缩放为已验证范围，不测量临时页面状态或手动缩放后的实际渲染高度。样式无法识别时，会提供重新读取入口并暂放在窗口侧边中部；适配新版本时应更新解析和相应样式 fixture。
 
@@ -104,4 +107,4 @@ watcher 通过 NSWorkspace 的应用事件观察 Kimi：初始检查时 Kimi 已
 
 Unicode 数据受 [Unicode License V3](../THIRD_PARTY_LICENSES/Unicode-LICENSE.txt) 约束。分发源码与 App 时需保留该许可，构建脚本已将其复制到 App 资源中；MIT 许可不替代 Unicode 的第三方许可。
 
-发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.0 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。
+发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.1 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。

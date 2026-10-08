@@ -26,32 +26,36 @@ struct KimiWindowLocator {
         // The system list is front-to-back: follow the foremost regular Kimi window.
         for entry in windows {
             guard let pid = entry[kCGWindowOwnerPID as String] as? Int32,
+                  pid == app.processIdentifier,
                   let layer = entry[kCGWindowLayer as String] as? Int,
+                  layer == 0,
                   let alpha = entry[kCGWindowAlpha as String] as? Double,
+                  alpha > 0,
                   let raw = entry[kCGWindowBounds as String] as? [String: Any],
                   let bounds = CGRect(dictionaryRepresentation: raw as CFDictionary),
                   WindowGeometry.isTargetWindow(pid: pid, targetPID: app.processIdentifier,
                                                 layer: layer, alpha: alpha, bounds: bounds),
                   let id = entry[kCGWindowNumber as String] as? UInt32,
-                  let screen = matchingScreen(bounds) else { continue }
-            let displayID = (screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.uint32Value
-                ?? CGMainDisplayID()
+                  let match = matchingScreen(bounds) else { continue }
             return Target(processID: app.processIdentifier, bundleURL: bundleURL, windowID: id, screenBounds: bounds,
                           frame: WindowGeometry.appKitFrame(bounds,
-                              displayBounds: CGDisplayBounds(displayID), screenFrame: screen.frame),
-                          screen: screen,
+                              displayBounds: match.displayBounds, screenFrame: match.screen.frame),
+                          screen: match.screen,
                           orderedWindowIDs: windows.compactMap { $0[kCGWindowNumber as String] as? UInt32 })
         }
         return nil
     }
 
-    private func matchingScreen(_ bounds: CGRect) -> NSScreen? {
-        NSScreen.screens.max { a, b in overlap(bounds, a) < overlap(bounds, b) }
+    private func matchingScreen(_ bounds: CGRect) -> (screen: NSScreen, displayBounds: CGRect)? {
+        let screens = NSScreen.screens.compactMap { screen -> (screen: NSScreen, displayBounds: CGRect)? in
+            guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return nil }
+            return (screen, CGDisplayBounds(id.uint32Value))
+        }
+        return screens.max { a, b in overlap(bounds, a.displayBounds) < overlap(bounds, b.displayBounds) }
     }
 
-    private func overlap(_ bounds: CGRect, _ screen: NSScreen) -> CGFloat {
-        guard let id = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else { return 0 }
-        let intersection = bounds.intersection(CGDisplayBounds(id.uint32Value))
+    private func overlap(_ bounds: CGRect, _ displayBounds: CGRect) -> CGFloat {
+        let intersection = bounds.intersection(displayBounds)
         return intersection.isNull ? 0 : intersection.width * intersection.height
     }
 }

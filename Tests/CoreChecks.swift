@@ -3,7 +3,7 @@ import CoreGraphics
 
 @main
 struct CoreChecks {
-    static func main() throws {
+    static func main() async throws {
         let checks: [(String, () throws -> Void)] = [
             ("Desktop usage schema and update time", desktopUsage),
             ("Missing weekly window and zero percent", missingWeeklyWindow),
@@ -37,7 +37,19 @@ struct CoreChecks {
             try check()
             print("PASS \(name)")
         }
-        print("\(checks.count) core checks passed")
+        let cacheChecks: [(String, () async throws -> Void)] = [
+            ("Unchanged style resources reuse the cached parse", styleCacheHit),
+            ("Stylesheet metadata changes invalidate the cache", styleCacheCSSChanges),
+            ("HTML stylesheet references invalidate the cache", styleCacheReferences),
+            ("Display scale and bundle changes invalidate the cache", styleCacheScaleAndBundle),
+            ("Missing style resources recover without caching failure", styleCacheMissingResource),
+            ("Unrecognized styles remain retryable", styleCacheParseFailure)
+        ]
+        for (name, check) in cacheChecks {
+            try await check()
+            print("PASS \(name)")
+        }
+        print("\(checks.count + cacheChecks.count) core checks passed")
     }
 
     private static func desktopUsage() throws {
@@ -165,8 +177,7 @@ struct CoreChecks {
         try require(WindowGeometry.attachmentFrame(window: CGRect(x: 0, y: 0, width: 100, height: 100), visibleScreen: screen, corner: .bottomRight, chrome: insets) == nil, "Hide on undersized windows")
     }
 
-    private static func styleInsets() throws {
-        let css = """
+    private static let styleFixtureCSS = """
         :root { --panel-head-h:48px; --space-2:8px; --p-hairline:.5px; --icon-button-sm:26px; --base-font:14px; --ui-shift:calc(var(--base-font,14px) - 14px); --ui-b2:calc(14px + var(--ui-shift)); --ui-font-size:var(--ui-b2); --ui-font-size-sm:calc(var(--ui-font-size) - 1px); --leading-tight:1.25; }
         @media(max-resolution:1.1dppx) { :root { --p-hairline:1px; } }
         .chat-header[data-v-test] { height:var(--panel-head-h,48px); }
@@ -176,6 +187,9 @@ struct CoreChecks {
         .ui-badge--sm[data-v-test] { height:18px; }
         .ui-icon-button--sm[data-v-test] { height:var(--icon-button-sm); }
         """
+
+    private static func styleInsets() throws {
+        let css = styleFixtureCSS
         let retina = WindowStyleReader.parse(css: css, displayScale: 2)
         try require(retina?.top == 48 && retina?.bottom == 56.5, "Resolve installed-style variables and footer box")
         let standard = WindowStyleReader.parse(css: css, displayScale: 1)
@@ -185,6 +199,131 @@ struct CoreChecks {
         let changed = WindowStyleReader.parse(css: updated)
         try require(changed?.top == 60 && changed?.bottom == 60.5, "Stylesheet changes must change computed heights")
         try require(WindowStyleReader.parse(css: ":root{--panel-head-h:48px}") == nil, "Missing layout rules must not fall back to hardcoded heights")
+    }
+
+    private static func styleCacheHit() async throws {
+        let bundle = try makeStyleBundle()
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        let cache = WindowStyleReaderCache()
+        let first = await cache.read(bundleURL: bundle)
+        let equivalent = URL(fileURLWithPath: bundle.path + "/Contents/..", isDirectory: true)
+        let second = await cache.read(bundleURL: equivalent)
+        try require(first.insets?.top == 48 && second.insets?.bottom == 56.5, "Cached layout preserves measured insets")
+        let count = await cache.parseCount
+        try require(count == 1, "Unchanged resources and standardized bundle path must not parse again")
+    }
+
+    private static func styleCacheCSSChanges() async throws {
+        let bundle = try makeStyleBundle()
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        let cache = WindowStyleReaderCache()
+        _ = await cache.read(bundleURL: bundle)
+        let file = styleDirectory(bundle).appendingPathComponent("assets/main.css")
+        let date = Date(timeIntervalSince1970: 2_000_000_000)
+        let changed = styleFixtureCSS.replacingOccurrences(of: "--panel-head-h:48px", with: "--panel-head-h:60px")
+        try changed.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+        let byDate = await cache.read(bundleURL: bundle)
+        try require(byDate.insets?.top == 60, "Same-size CSS changes are detected by modification date")
+        let larger = changed.replacingOccurrences(of: "--panel-head-h:60px", with: "--panel-head-h:100px")
+        try larger.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: date], ofItemAtPath: file.path)
+        let bySize = await cache.read(bundleURL: bundle)
+        try require(bySize.insets?.top == 100, "CSS size changes are detected even with an unchanged modification date")
+        let count = await cache.parseCount
+        try require(count == 3, "Each changed stylesheet is parsed exactly once")
+    }
+
+    private static func styleCacheReferences() async throws {
+        let bundle = try makeStyleBundle()
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        let cache = WindowStyleReaderCache()
+        _ = await cache.read(bundleURL: bundle)
+        let directory = styleDirectory(bundle)
+        let updated = styleFixtureCSS.replacingOccurrences(of: "--panel-head-h:48px", with: "--panel-head-h:72px")
+        try updated.write(to: directory.appendingPathComponent("assets/next.css"), atomically: true, encoding: .utf8)
+        let html = #"<link rel="stylesheet" href="/assets/next.css">"#
+        let index = directory.appendingPathComponent("index.html")
+        try html.write(to: index, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000_000_000)],
+                                             ofItemAtPath: index.path)
+        let measurement = await cache.read(bundleURL: bundle)
+        try require(measurement.insets?.top == 72, "Changed index references load the new stylesheet")
+        let count = await cache.parseCount
+        try require(count == 2, "Changing HTML references invalidates the previous source list")
+    }
+
+    private static func styleCacheScaleAndBundle() async throws {
+        let bundle = try makeStyleBundle()
+        let other = try makeStyleBundle(css: styleFixtureCSS.replacingOccurrences(of: "--panel-head-h:48px", with: "--panel-head-h:64px"))
+        defer {
+            try? FileManager.default.removeItem(at: bundle)
+            try? FileManager.default.removeItem(at: other)
+        }
+        let cache = WindowStyleReaderCache()
+        let retina = await cache.read(bundleURL: bundle, displayScale: 2)
+        let standard = await cache.read(bundleURL: bundle, displayScale: 1)
+        try require(retina.insets?.bottom == 56.5 && standard.insets?.bottom == 57,
+                    "Display scale invalidates the parsed media-query result")
+        let nextBundle = await cache.read(bundleURL: other, displayScale: 1)
+        try require(nextBundle.insets?.top == 64, "Another bundle cannot reuse the previous insets")
+        _ = await cache.read(bundleURL: bundle, displayScale: 1)
+        let count = await cache.parseCount
+        try require(count == 4, "Only the most recent successful result is retained")
+    }
+
+    private static func styleCacheMissingResource() async throws {
+        let bundle = try makeStyleBundle()
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        let cache = WindowStyleReaderCache()
+        _ = await cache.read(bundleURL: bundle)
+        let file = styleDirectory(bundle).appendingPathComponent("assets/main.css")
+        try FileManager.default.removeItem(at: file)
+        for _ in 0..<2 {
+            let missing = await cache.read(bundleURL: bundle)
+            try require(missing.insets == nil && missing.status == "暂时无法读取 Kimi 安装样式",
+                        "A missing stylesheet must return the existing read error instead of stale cached insets")
+        }
+        let updated = styleFixtureCSS.replacingOccurrences(of: "--panel-head-h:48px", with: "--panel-head-h:62px")
+        try updated.write(to: file, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 2_000_000_000)],
+                                             ofItemAtPath: file.path)
+        let recovered = await cache.read(bundleURL: bundle)
+        try require(recovered.insets?.top == 62, "Restoring the stylesheet retries and computes the current layout")
+        let count = await cache.parseCount
+        try require(count == 2, "Missing files do not parse or replace the successful cache entry")
+    }
+
+    private static func styleCacheParseFailure() async throws {
+        let bundle = try makeStyleBundle(css: ":root{--panel-head-h:48px}")
+        defer { try? FileManager.default.removeItem(at: bundle) }
+        let cache = WindowStyleReaderCache()
+        for _ in 0..<2 {
+            let failed = await cache.read(bundleURL: bundle)
+            try require(failed.insets == nil && failed.status == "尚未识别 Kimi 窗口样式栏高",
+                        "Unsupported CSS retains the existing parse error")
+        }
+        let attempts = await cache.parseCount
+        try require(attempts == 2, "A failed parse must not be cached")
+        let file = styleDirectory(bundle).appendingPathComponent("assets/main.css")
+        try styleFixtureCSS.write(to: file, atomically: true, encoding: .utf8)
+        let recovered = await cache.read(bundleURL: bundle)
+        try require(recovered.insets?.top == 48, "A corrected stylesheet recovers after a failed parse")
+    }
+
+    private static func styleDirectory(_ bundle: URL) -> URL {
+        bundle.appendingPathComponent("Contents/Resources/desktop-dist", isDirectory: true)
+    }
+
+    private static func makeStyleBundle(css: String = styleFixtureCSS) throws -> URL {
+        let bundle = FileManager.default.temporaryDirectory.appendingPathComponent("KimiStyleChecks-" + UUID().uuidString + ".app",
+                                                                                 isDirectory: true)
+        let directory = styleDirectory(bundle)
+        try FileManager.default.createDirectory(at: directory.appendingPathComponent("assets"), withIntermediateDirectories: true)
+        try #"<link rel="stylesheet" href="/assets/main.css">"#.write(to: directory.appendingPathComponent("index.html"),
+                                                                    atomically: true, encoding: .utf8)
+        try css.write(to: directory.appendingPathComponent("assets/main.css"), atomically: true, encoding: .utf8)
+        return bundle
     }
 
     private static func windowFiltering() throws {

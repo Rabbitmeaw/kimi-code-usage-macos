@@ -7,28 +7,40 @@ enum WindowStyleReader {
         let status: String
     }
 
+    fileprivate static let unavailable = Measurement(insets: nil, status: "暂时无法读取 Kimi 安装样式")
+
     static func read(bundleURL: URL, displayScale: CGFloat = 2) -> Measurement {
         let directory = bundleURL.appendingPathComponent("Contents/Resources/desktop-dist", isDirectory: true)
         do {
-            let html = try String(contentsOf: directory.appendingPathComponent("index.html"), encoding: .utf8)
-            let links = matches(#"<link\b[^>]*>"#, in: html)
-            var styles: [String] = []
-            for link in links {
-                guard attribute("rel", in: link) == "stylesheet",
-                      let href = attribute("href", in: link),
-                      href.hasPrefix("/assets/"), href.hasSuffix(".css") else { continue }
-                let file = directory.appendingPathComponent(String(href.dropFirst())).standardizedFileURL
-                guard file.path.hasPrefix(directory.standardizedFileURL.path + "/") else { continue }
-                styles.append(try String(contentsOf: file, encoding: .utf8))
-            }
-            guard !styles.isEmpty,
-                  let insets = parse(css: styles.joined(separator: "\n"), displayScale: displayScale) else {
-                return Measurement(insets: nil, status: "尚未识别 Kimi 窗口样式栏高")
-            }
-            return Measurement(insets: insets, status: "已读取 Kimi 样式栏高")
+            let files = try stylesheetURLs(in: directory)
+            return measurement(css: try stylesheetText(from: files), displayScale: displayScale)
         } catch {
-            return Measurement(insets: nil, status: "暂时无法读取 Kimi 安装样式")
+            return unavailable
         }
+    }
+
+    fileprivate static func stylesheetURLs(in directory: URL) throws -> [URL] {
+        let html = try String(contentsOf: directory.appendingPathComponent("index.html"), encoding: .utf8)
+        return matches(#"<link\b[^>]*>"#, in: html).compactMap { link in
+            guard attribute("rel", in: link) == "stylesheet",
+                  let href = attribute("href", in: link),
+                  href.hasPrefix("/assets/"), href.hasSuffix(".css") else { return nil }
+            let file = directory.appendingPathComponent(String(href.dropFirst())).standardizedFileURL
+            guard file.path.hasPrefix(directory.standardizedFileURL.path + "/") else { return nil }
+            return file
+        }
+    }
+
+    fileprivate static func stylesheetText(from files: [URL]) throws -> String? {
+        guard !files.isEmpty else { return nil }
+        return try files.map { try String(contentsOf: $0, encoding: .utf8) }.joined(separator: "\n")
+    }
+
+    fileprivate static func measurement(css: String?, displayScale: CGFloat) -> Measurement {
+        guard let css, let insets = parse(css: css, displayScale: displayScale) else {
+            return Measurement(insets: nil, status: "尚未识别 Kimi 窗口样式栏高")
+        }
+        return Measurement(insets: insets, status: "已读取 Kimi 样式栏高")
     }
 
     // The installed desktop layout at its default page zoom. Font steps remain below
@@ -227,6 +239,64 @@ enum WindowStyleReader {
             if characters[index] == "-" || characters[index] == "+" { index += 1 }
             while index < characters.count, characters[index].isNumber || characters[index] == "." { index += 1 }
             return Double(String(characters[start..<index]))
+        }
+    }
+}
+
+// Only the latest successful layout is retained. Unchanged reads stat the source
+// files without loading HTML/CSS or rebuilding the parsed rule dictionaries.
+actor WindowStyleReaderCache {
+    private struct SourceStamp: Equatable {
+        let url: URL
+        let modifiedAt: Date
+        let size: UInt64
+
+        init(url: URL) throws {
+            let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+            guard let modifiedAt = attributes[.modificationDate] as? Date,
+                  let size = attributes[.size] as? NSNumber else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            self.url = url
+            self.modifiedAt = modifiedAt
+            self.size = size.uint64Value
+        }
+    }
+
+    private struct Entry {
+        let bundleURL: URL
+        let displayScale: CGFloat
+        let sources: [SourceStamp]
+        let measurement: WindowStyleReader.Measurement
+    }
+
+    private var cached: Entry?
+    private(set) var parseCount = 0
+
+    func read(bundleURL: URL, displayScale: CGFloat = 2) -> WindowStyleReader.Measurement {
+        let bundleURL = bundleURL.standardizedFileURL
+        if let cached, cached.bundleURL == bundleURL, cached.displayScale == displayScale,
+           let current = try? cached.sources.map({ try SourceStamp(url: $0.url) }),
+           current == cached.sources {
+            return cached.measurement
+        }
+        let directory = bundleURL.appendingPathComponent("Contents/Resources/desktop-dist", isDirectory: true)
+        do {
+            // Capture metadata before reading each source, so a concurrent update
+            // invalidates this result on the next check rather than hiding the change.
+            let index = try SourceStamp(url: directory.appendingPathComponent("index.html"))
+            let files = try WindowStyleReader.stylesheetURLs(in: directory)
+            let sources = [index] + (try files.map { try SourceStamp(url: $0) })
+            let css = try WindowStyleReader.stylesheetText(from: files)
+            if css != nil { parseCount += 1 }
+            let measurement = WindowStyleReader.measurement(css: css, displayScale: displayScale)
+            if measurement.insets != nil {
+                cached = Entry(bundleURL: bundleURL, displayScale: displayScale,
+                               sources: sources, measurement: measurement)
+            }
+            return measurement
+        } catch {
+            return WindowStyleReader.unavailable
         }
     }
 }

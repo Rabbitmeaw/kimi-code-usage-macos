@@ -31,6 +31,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let store = UsageStore()
     private let client = QuotaClient()
     private let locator = KimiWindowLocator()
+    private let styleCache = WindowStyleReaderCache()
     private var panel: UsagePanel!
     private var locatorTimer: Timer?
     private var refreshTimer: Timer?
@@ -77,9 +78,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
             return
         }
 
-        locatorTimer = Timer(timeInterval: 0.1, target: self, selector: #selector(updateAttachment), userInfo: nil, repeats: true)
-        locatorTimer?.tolerance = 0.02
-        RunLoop.main.add(locatorTimer!, forMode: .common)
+        updateLocatorTimer()
         refreshTimer = Timer(timeInterval: 60, target: self, selector: #selector(refresh), userInfo: nil, repeats: true)
         refreshTimer?.tolerance = 5
         RunLoop.main.add(refreshTimer!, forMode: .common)
@@ -196,18 +195,33 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let level = targetIsActive ? NSWindow.Level(rawValue: NSWindow.Level.normal.rawValue + 1) : .normal
         let levelChanged = panel.level != level
         if levelChanged { panel.level = level }
-        let ownIndex = target.orderedWindowIDs.firstIndex(of: CGWindowID(panel.windowNumber))
-        let targetIndex = target.orderedWindowIDs.firstIndex(of: target.windowID)
         if targetIsActive {
             if !wasVisible { panel.orderFrontRegardless() }
-        } else if levelChanged || ownIndex == nil || targetIndex == nil || ownIndex! + 1 != targetIndex! {
-            panel.order(.above, relativeTo: Int(target.windowID))
+        } else {
+            let ownIndex = target.orderedWindowIDs.firstIndex(of: CGWindowID(panel.windowNumber))
+            let targetIndex = target.orderedWindowIDs.firstIndex(of: target.windowID)
+            if levelChanged || ownIndex == nil || targetIndex == nil || ownIndex! + 1 != targetIndex! {
+                panel.order(.above, relativeTo: Int(target.windowID))
+            }
         }
         if !wasVisible { refreshIfStale() }
     }
 
     private func refreshIfStale() {
         if store.snapshot.map({ Date().timeIntervalSince($0.updatedAt) >= 60 }) ?? true { refresh() }
+    }
+
+    private func updateLocatorTimer() {
+        guard sessionActive, corner != .free else {
+            locatorTimer?.invalidate()
+            locatorTimer = nil
+            return
+        }
+        guard locatorTimer == nil else { return }
+        let timer = Timer(timeInterval: 1, target: self, selector: #selector(updateAttachment), userInfo: nil, repeats: true)
+        timer.tolerance = 0.1
+        RunLoop.main.add(timer, forMode: .common)
+        locatorTimer = timer
     }
 
     private func configurePlacement() {
@@ -263,19 +277,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         lastLayoutRead = Date()
         let bundleURL = target.bundleURL
         layoutTask = Task { [weak self] in
-            let measurement = await Task.detached(priority: .utility) {
-                WindowStyleReader.read(bundleURL: bundleURL, displayScale: displayScale)
-            }.value
+            let measurement = await self?.styleCache.read(bundleURL: bundleURL, displayScale: displayScale)
             guard let self, !Task.isCancelled else { return }
             self.layoutTask = nil
+            guard let measurement else { return }
             guard self.layoutBundleURL == bundleURL, self.layoutDisplayScale == displayScale else { return }
             if let insets = measurement.insets {
                 self.chromeInsets = insets
-                self.store.layoutNotice = nil
-                self.store.targetStatus = nil
+                if self.store.layoutNotice != nil { self.store.layoutNotice = nil }
+                if self.store.targetStatus != nil { self.store.targetStatus = nil }
             } else {
-                self.store.layoutNotice = measurement.status
-                self.store.targetStatus = "布局待更新"
+                if self.store.layoutNotice != measurement.status { self.store.layoutNotice = measurement.status }
+                if self.store.targetStatus != "布局待更新" { self.store.targetStatus = "布局待更新" }
             }
             self.updateAttachment()
         }
@@ -304,6 +317,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         store.corner = value
         UserDefaults.standard.set(value.rawValue, forKey: "attachmentCorner")
         configurePlacement()
+        updateLocatorTimer()
         if value == .free { restoreFreePosition() }
         updateAttachment()
     }
@@ -379,7 +393,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     @objc private func quit() { NSApp.terminate(nil) }
 
-    @objc private func sessionResigned() { sessionActive = false; panel.orderOut(nil) }
-    @objc private func sessionBecameActive() { sessionActive = true; updateAttachment(); refresh() }
-    @objc private func wokeUp() { updateAttachment(); refresh() }
+    @objc private func sessionResigned() {
+        sessionActive = false
+        updateLocatorTimer()
+        panel.orderOut(nil)
+    }
+    @objc private func sessionBecameActive() {
+        sessionActive = true
+        updateLocatorTimer()
+        updateAttachment()
+        refresh()
+    }
+    @objc private func wokeUp() { updateLocatorTimer(); updateAttachment(); refresh() }
 }
