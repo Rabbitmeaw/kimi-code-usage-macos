@@ -22,8 +22,8 @@ private final class BandSettingsWindow: NSWindow {
 
 @MainActor
 final class BandSettingsWindowController: NSWindowController {
-    init(settings: QuotaBandSettings, onSave: @escaping (QuotaBandSettings) -> Void) {
-        let window = BandSettingsWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 760),
+    init(settings: QuotaBandSettings, onSave: @escaping (QuotaBandSettings) -> Bool) {
+        let window = BandSettingsWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 850),
                               styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "显示设置"
         window.isReleasedWhenClosed = false
@@ -31,7 +31,9 @@ final class BandSettingsWindowController: NSWindowController {
         window.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]
         super.init(window: window)
         window.contentView = NSHostingView(rootView: BandSettingsView(settings: settings,
-            onSave: { [weak self] value in onSave(value); self?.close() },
+            onSave: { [weak self] value in
+                if onSave(value) { self?.close() }
+            },
             onCancel: { [weak self] in self?.close() }))
     }
 
@@ -71,12 +73,14 @@ private final class BandSettingsDraft: ObservableObject {
     @Published var backgroundColor: DisplayColor
     @Published var backgroundOpacity: Double
     @Published var usesGradient: Bool
+    @Published var followsKimi: Bool
 
     init(settings: QuotaBandSettings) {
         rows = settings.bands.map(DraftBand.init)
         backgroundColor = settings.backgroundColor
         backgroundOpacity = settings.backgroundOpacity
         usesGradient = settings.usesGradient
+        followsKimi = settings.followsKimi
     }
 
     func restoreDefaults() {
@@ -85,6 +89,7 @@ private final class BandSettingsDraft: ObservableObject {
         backgroundColor = defaults.backgroundColor
         backgroundOpacity = defaults.backgroundOpacity
         usesGradient = defaults.usesGradient
+        followsKimi = defaults.followsKimi
         notice = nil
     }
 }
@@ -111,6 +116,7 @@ private struct BandSettingsView: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
+            runControls
             appearanceControls
             HStack {
                 Text("额度条")
@@ -200,13 +206,33 @@ private struct BandSettingsView: View {
             Spacer(minLength: 0)
             HStack {
                 Button("恢复默认", action: draft.restoreDefaults)
+                Button("退出 Kimi 额度") { NSApp.terminate(nil) }
                 Spacer()
                 Button("取消", action: onCancel).keyboardShortcut(.cancelAction)
                 Button("保存", action: save).keyboardShortcut(.defaultAction)
             }
         }
         .padding(24)
-        .frame(width: 520, height: 760)
+        .frame(width: 520, height: 850)
+    }
+
+    private var runControls: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("运行")
+                    .font(.system(size: 13, weight: .medium))
+                Spacer()
+                Toggle("跟随 Kimi 自动运行", isOn: $draft.followsKimi)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+            }
+            Text("Kimi 启动时打开卡片，退出时关闭。关闭后可手动运行。")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
     }
 
     private var appearanceControls: some View {
@@ -284,7 +310,8 @@ private struct BandSettingsView: View {
             bands.append(QuotaBand(lowerBound: boundary, emoji: row.emoji, customColor: row.customColor))
         }
         let settings = QuotaBandSettings(bands: bands, backgroundColor: draft.backgroundColor,
-                                        backgroundOpacity: draft.backgroundOpacity, usesGradient: draft.usesGradient)
+                                        backgroundOpacity: draft.backgroundOpacity, usesGradient: draft.usesGradient,
+                                        followsKimi: draft.followsKimi)
         if let error = settings.validationMessage() { draft.notice = error; return nil }
         return settings
     }

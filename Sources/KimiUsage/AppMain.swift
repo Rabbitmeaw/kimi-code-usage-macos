@@ -81,6 +81,15 @@ enum AppMain {
             RunLoop.main.run()
             return
         }
+        if let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.yokinri.kimi-usage")
+            .first(where: { $0.processIdentifier != getpid() && !$0.isTerminated }) {
+            if !args.contains("--follow-launch"), let url = running.bundleURL {
+                let configuration = NSWorkspace.OpenConfiguration()
+                configuration.createsNewApplicationInstance = false
+                NSWorkspace.shared.openApplication(at: url, configuration: configuration)
+            }
+            return
+        }
         let controller = AppController()
         app.delegate = controller
         withExtendedLifetime(controller) { app.run() }

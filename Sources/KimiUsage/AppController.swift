@@ -55,6 +55,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
            settings.validationMessage() == nil {
             store.bandSettings = settings
         }
+        let automaticallyLaunched = CommandLine.arguments.contains("--follow-launch")
         createPanel()
         if corner == .free { restoreFreePosition() }
         let center = NSWorkspace.shared.notificationCenter
@@ -63,11 +64,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
                      NSWorkspace.didTerminateApplicationNotification] {
             center.addObserver(self, selector: #selector(updateAttachment), name: name, object: nil)
         }
+        center.addObserver(self, selector: #selector(kimiTerminated(_:)),
+                           name: NSWorkspace.didTerminateApplicationNotification, object: nil)
         center.addObserver(self, selector: #selector(sessionResigned),
                            name: NSWorkspace.sessionDidResignActiveNotification, object: nil)
         center.addObserver(self, selector: #selector(sessionBecameActive),
                            name: NSWorkspace.sessionDidBecomeActiveNotification, object: nil)
         center.addObserver(self, selector: #selector(wokeUp), name: NSWorkspace.didWakeNotification, object: nil)
+
+        if automaticallyLaunched, !store.bandSettings.followsKimi || !isKimiRunning {
+            NSApp.terminate(nil)
+            return
+        }
 
         locatorTimer = Timer(timeInterval: 0.1, target: self, selector: #selector(updateAttachment), userInfo: nil, repeats: true)
         locatorTimer?.tolerance = 0.02
@@ -77,6 +85,46 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         RunLoop.main.add(refreshTimer!, forMode: .common)
         updateAttachment()
         refresh()
+        _ = applyFollowSetting(store.bandSettings.followsKimi)
+        if !automaticallyLaunched { editBands() }
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        editBands()
+        return false
+    }
+
+    private var isKimiRunning: Bool {
+        NSRunningApplication.runningApplications(withBundleIdentifier: KimiWindowLocator.bundleID)
+            .contains { !$0.isTerminated }
+    }
+
+    @objc private func kimiTerminated(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == KimiWindowLocator.bundleID,
+              store.bandSettings.followsKimi, !isKimiRunning else { return }
+        NSApp.terminate(nil)
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow,
+              window === settingsController?.window,
+              store.bandSettings.followsKimi, !isKimiRunning else { return }
+        NSApp.terminate(nil)
+    }
+
+    private func applyFollowSetting(_ enabled: Bool) -> Bool {
+        do {
+            try FollowKimiService.setEnabled(enabled)
+            return true
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "未能更新自动跟随"
+            alert.informativeText = "请确认 Kimi Usage.app 已放入「应用程序」，并在「系统设置 → 通用 → 登录项」中允许其后台活动。你也可以关闭自动跟随，继续手动运行。"
+            alert.addButton(withTitle: "好")
+            alert.runModal()
+            return false
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -313,10 +361,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSWindowDelegate {
         if settingsController?.window?.isVisible != true {
             settingsController = BandSettingsWindowController(settings: store.bandSettings) { [weak self] settings in
                 guard let self, settings.validationMessage() == nil,
-                      let data = try? JSONEncoder().encode(settings) else { return }
+                      let data = try? JSONEncoder().encode(settings),
+                      self.applyFollowSetting(settings.followsKimi) else { return false }
                 UserDefaults.standard.set(data, forKey: self.settingsKey)
                 self.store.bandSettings = settings
+                return true
             }
+            settingsController?.window?.delegate = self
         }
         settingsController?.present(near: panel)
     }

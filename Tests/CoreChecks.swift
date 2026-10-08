@@ -30,7 +30,8 @@ struct CoreChecks {
             ("Quota reset hour and day formatting", quotaResetHourDays),
             ("Legacy display settings migration", legacyDisplaySettings),
             ("Display colors opacity and gradient round trip", displaySettingsRoundTrip),
-            ("Invalid display color and opacity values", invalidDisplaySettings)
+            ("Invalid display color and opacity values", invalidDisplaySettings),
+            ("Follow Kimi defaults migration and persistence", followsKimiSettings)
         ]
         for (name, check) in checks {
             try check()
@@ -297,6 +298,7 @@ struct CoreChecks {
         try require(settings.backgroundColor == .black, "Legacy background defaults to black")
         try require(settings.backgroundOpacity == 0.5, "Legacy background defaults to half opacity")
         try require(!settings.usesGradient, "Legacy gradients default off")
+        try require(settings.followsKimi, "Legacy band-only settings follow Kimi by default")
         try require(settings.validationMessage() == nil, "Migrated settings validate")
         try require(settings.appearance(remaining: 100).color == .green, "Migration preserves the three-band palette")
         let restored = try JSONDecoder().decode(QuotaBandSettings.self, from: JSONEncoder().encode(settings))
@@ -321,6 +323,38 @@ struct CoreChecks {
                 try require(restored.appearance(remaining: 19.999).customColor == nil,
                             "Other bands keep their automatic color")
             }
+        }
+    }
+
+    private static func followsKimiSettings() throws {
+        try require(QuotaBandSettings.defaults.followsKimi, "Default settings follow Kimi")
+        let implicit = QuotaBandSettings(bands: QuotaBandSettings.defaults.bands)
+        try require(implicit.followsKimi, "Initializer follows Kimi unless explicitly disabled")
+
+        let legacy = Data(#"{"bands":[{"lowerBound":0,"emoji":"😇"},{"lowerBound":33.5,"emoji":"🏂🏻","customColor":{"red":0.3,"green":0.6,"blue":0.9}},{"lowerBound":80,"emoji":"🪂"}],"backgroundColor":{"red":0.125,"green":0.25,"blue":0.5},"backgroundOpacity":0.35,"usesGradient":true}"#.utf8)
+        let customColor = DisplayColor(red: 0.3, green: 0.6, blue: 0.9)
+        let expected = QuotaBandSettings(bands: [
+            QuotaBand(lowerBound: 0, emoji: "😇"),
+            QuotaBand(lowerBound: 33.5, emoji: "🏂🏻", customColor: customColor),
+            QuotaBand(lowerBound: 80, emoji: "🪂")
+        ], backgroundColor: DisplayColor(red: 0.125, green: 0.25, blue: 0.5),
+           backgroundOpacity: 0.35, usesGradient: true)
+        let migrated = try JSONDecoder().decode(QuotaBandSettings.self, from: legacy)
+        try require(migrated == expected && migrated.followsKimi,
+                    "Legacy display JSON defaults follow on without changing bands or appearance")
+
+        for follows in [true, false] {
+            let settings = QuotaBandSettings(bands: migrated.bands, backgroundColor: migrated.backgroundColor,
+                                            backgroundOpacity: migrated.backgroundOpacity,
+                                            usesGradient: migrated.usesGradient, followsKimi: follows)
+            let encoded = try JSONEncoder().encode(settings)
+            let restored = try JSONDecoder().decode(QuotaBandSettings.self, from: encoded)
+            try require(restored.followsKimi == follows && restored == settings,
+                        "Follow setting persists both enabled and disabled with existing display settings")
+            try require(restored.validationMessage() == nil, "Follow setting does not invalidate display settings")
+            let appearance = restored.appearance(remaining: 50)
+            try require(appearance.emoji == "🏂🏻" && appearance.customColor == customColor,
+                        "Follow setting preserves the selected custom band appearance")
         }
     }
 

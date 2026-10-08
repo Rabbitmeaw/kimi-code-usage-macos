@@ -27,17 +27,19 @@ struct QuotaBandSettings: Codable, Equatable {
     var backgroundColor: DisplayColor = .black
     var backgroundOpacity: Double = 0.5
     var usesGradient: Bool = false
+    var followsKimi: Bool = true
 
     private enum CodingKeys: String, CodingKey {
-        case bands, backgroundColor, backgroundOpacity, usesGradient
+        case bands, backgroundColor, backgroundOpacity, usesGradient, followsKimi
     }
 
     init(bands: [QuotaBand], backgroundColor: DisplayColor = .black,
-         backgroundOpacity: Double = 0.5, usesGradient: Bool = false) {
+         backgroundOpacity: Double = 0.5, usesGradient: Bool = false, followsKimi: Bool = true) {
         self.bands = bands
         self.backgroundColor = backgroundColor
         self.backgroundOpacity = backgroundOpacity
         self.usesGradient = usesGradient
+        self.followsKimi = followsKimi
     }
 
     init(from decoder: Decoder) throws {
@@ -46,6 +48,7 @@ struct QuotaBandSettings: Codable, Equatable {
         backgroundColor = try values.decodeIfPresent(DisplayColor.self, forKey: .backgroundColor) ?? .black
         backgroundOpacity = try values.decodeIfPresent(Double.self, forKey: .backgroundOpacity) ?? 0.5
         usesGradient = try values.decodeIfPresent(Bool.self, forKey: .usesGradient) ?? false
+        followsKimi = try values.decodeIfPresent(Bool.self, forKey: .followsKimi) ?? true
     }
 
     static let defaults = QuotaBandSettings(bands: [

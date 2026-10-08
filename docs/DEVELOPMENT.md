@@ -13,17 +13,17 @@ bash scripts/test-core.sh
 zsh scripts/build-app.sh
 ```
 
-构建产物为 `dist/Kimi Usage.app`。脚本使用 Swift release 构建，移除调试符号和本机源码路径，将 MIT 与 Unicode 许可复制至 App 资源目录，再执行签名与签名校验。默认使用 ad-hoc 签名，也可通过 `CODESIGN_IDENTITY` 指定签名身份。当前发布包未进行 Apple 公证。
+构建产物为 `dist/Kimi Usage.app`。更新运行中的版本时可用 `APP_OUTPUT_PATH` 指定新的打包位置，避免覆盖正在运行的可执行文件。脚本使用 Swift release 构建，移除调试符号和本机源码路径，将 MIT 与 Unicode 许可复制至 App 资源目录，再执行签名与签名校验。默认使用 ad-hoc 签名，也可通过 `CODESIGN_IDENTITY` 指定签名身份。当前发布包未进行 Apple 公证。
 
-`Tests/CoreChecks.swift` 包含 26 组核心检查，由独立 Swift runner 执行，无需 XCTest。覆盖内容包括：
+`Tests/CoreChecks.swift` 包含 27 组核心检查，由独立 Swift runner 执行，无需 XCTest。覆盖内容包括：
 
 - Desktop usage 数据结构、错误状态、缺失额度和 loopback 地址过滤。
 - 重置时间解析、按分钟向上取整，以及小时／天数格式。
 - 多显示器坐标转换、四角边界、目标窗口过滤和安装样式计算。
 - 3～6 档颜色映射、边界选择、单 emoji 校验及无效输入。
-- 旧版配置兼容、背景颜色／不透明度校验和显示设置 JSON 往返。
+- 旧版配置兼容、背景颜色／不透明度校验、自动跟随默认值和显示设置 JSON 往返。
 
-这些检查覆盖数据与计算逻辑。发布前还需实际确认原生菜单、系统取色器、窗口跟随、遮挡、自由拖动，以及保存和重启恢复。
+这些检查覆盖数据与计算逻辑。发布前还需实际确认原生菜单、系统取色器、窗口跟随、遮挡、自由拖动，以及保存和重启恢复。自动跟随还需验证 Kimi 启动／真正退出、隐藏／最小化、手动退出后等待下次启动、关闭开关，以及从「应用程序」重新打开显示设置。
 
 ## 代码结构
 
@@ -32,7 +32,7 @@ zsh scripts/build-app.sh
 | `QuotaClient.swift` | 定位 Desktop 本地服务、读取并解析额度 |
 | `Models.swift` | 额度快照与重置倒计时格式 |
 | `UsageStore.swift`、`UsageView.swift` | 显示状态、额度卡与按分钟更新 |
-| `AppController.swift` | 原生菜单、刷新、窗口附着和设置保存 |
+| `AppController.swift` | 原生菜单、刷新、窗口附着、显示设置和客户端生命周期 |
 | `WindowGeometry.swift`、`KimiWindowLocator.swift` | 目标窗口定位与坐标计算 |
 | `WindowStyleReader.swift` | 从 Kimi 安装样式计算上下留距 |
 | `QuotaBandSettings.swift`、`BandSettingsWindow.swift` | 档位模型、颜色和设置草稿 |
@@ -52,6 +52,18 @@ GET /api/v1/oauth/usage?provider=managed:kimi-code
 
 用量刷新间隔为 60 秒；卡片重新出现时，若上次数据已超过 60 秒，会立即刷新。倒计时使用 TimelineView 每分钟重算：5 小时窗口为 `0h00m`，7 天窗口为 `0d00h00m`，不足一天仍保留 `0d`。倒计时变化不会改写最近成功更新时间。
 
+## 自动跟随与安装入口
+
+v0.2.0 使用用户级 LaunchAgent 和 App bundle 内的独立 watcher。主 App 首次手动打开时，默认启用自动跟随，安装 `~/Library/LaunchAgents/com.yokinri.kimi-usage.follow.plist` 并加载 watcher。该用户级任务在登录时加载，但不会启动 Kimi。
+
+watcher 通过 NSWorkspace 的应用事件观察 Kimi：初始检查时 Kimi 已在运行，或收到 Kimi 启动事件，才唤起主 App。主 App 在 Kimi 真正退出后自行关闭；隐藏或最小化只改变固定卡片可见性，不视为退出。自由模式同样遵循 `followsKimi` 开关，启用时也随 Kimi 退出而关闭。
+
+后台唤起不弹显示设置，也不抢焦点。用户从「应用程序」首次打开或再次打开 App 时，会展示显示设置；Kimi 未运行时仍可管理配置。主 App 没有常驻 Dock 或菜单栏图标，应保留这个重新打开入口。
+
+手动选择「退出 Kimi 额度」后，watcher 不会立即重新拉起；下一次 Kimi 启动时会再次唤起。watcher 自身重新加载时也会执行初始检查，Kimi 已运行时仍会唤起主 App。持续停用请关闭 `followsKimi` 并保存：主 App 对用户级任务执行 bootout 并移除 plist，当前主 App 可继续手动运行。用户也可以在 macOS 登录项设置中关闭后台活动。
+
+安装流程为解压 ZIP、将 App 放至 `/Applications/Kimi Usage.app`，再手动打开一次。卸载应先在显示设置中关闭自动跟随并保存，再退出和移除 App，确保后台任务一并清理。
+
 ## 窗口与布局
 
 卡片尺寸为 203×117pt。固定四角时隐藏标题、跟随 Kimi 窗口，失去前台焦点后允许其他应用正常遮挡；自由模式保留标题、使用浮动窗口层级并支持整卡拖动。右键菜单由独立 NSMenu 显示，可展开到卡片边界外。
@@ -62,7 +74,7 @@ GET /api/v1/oauth/usage?provider=managed:kimi-code
 
 ## 配置与显示设置
 
-配置通过 UserDefaults 保存。档位与外观使用 `quotaBandSettings.v1`，位置模式使用 `attachmentCorner`，自由坐标使用 `freePanelOrigin`。移动项目目录或升级 App 时，应保持 Bundle Identifier 和配置键稳定。
+配置通过 UserDefaults 保存。档位与外观使用 `quotaBandSettings.v1`，其中 `followsKimi` 默认开启，旧配置缺少该字段时也按开启处理。位置模式使用 `attachmentCorner`，自由坐标使用 `freePanelOrigin`。移动项目目录或升级 App 时，应保持 Bundle Identifier 和配置键稳定，以保留用户已有设置。
 
 档位数限制为 3～6；最低下限为 0，其余下限严格递增。每档包含一个有效 emoji，可选自定义 RGB 颜色；未自定义时按档位数使用默认调色顺序。两条额度条共用同一设置。
 
@@ -92,4 +104,4 @@ GET /api/v1/oauth/usage?provider=managed:kimi-code
 
 Unicode 数据受 [Unicode License V3](../THIRD_PARTY_LICENSES/Unicode-LICENSE.txt) 约束。分发源码与 App 时需保留该许可，构建脚本已将其复制到 App 资源中；MIT 许可不替代 Unicode 的第三方许可。
 
-发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.1.0 发布 Apple Silicon ZIP；发布时核对版本号、目标架构、签名校验、第三方许可和压缩包内容。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。
+发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.0 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。
