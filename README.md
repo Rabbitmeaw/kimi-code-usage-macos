@@ -1,0 +1,46 @@
+# Kimi 额度 · macOS
+
+让 Kimi Code 的剩余额度留在工作窗口旁。一张小卡片，随时看见还能用多少、多久后重置。
+
+**[下载最新版](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)** · [反馈问题](https://github.com/Rabbitmeaw/kimi-code-usage-macos/issues)
+
+![Kimi 额度卡：5 小时与 7 天剩余额度、重置倒计时和更新时间](docs/images/quota-card.png)
+
+## 可以做什么
+
+- **额度一眼可见**：同时展示 5 小时、7 天剩余百分比、重置倒计时和最近成功更新时间，配合彩色额度条与 emoji。
+- **跟着窗口走**：固定在 Kimi 窗口四角，移动、缩放时自动跟随；也能切换到自由模式，拖到喜欢的位置并保持置顶。
+- **切换应用自然**：固定模式下，前台其他应用可以正常遮挡卡片；无需占用顶部菜单栏，所有操作都在右键菜单里。
+- **按自己的习惯显示**：设置 3～6 个额度档位，每档选择一个 emoji，点击彩色圆点修改颜色。
+- **外观自由调整**：背景颜色与透明度单独设置；额度条可开启同色浅→深渐变，浅色端混入白色，颜色不随背景透明度变灰。
+- **设置自动记住**：档位、颜色、外观、附着模式和自由位置在重启后保留。
+
+这是非官方、独立的开源窗口伴随工具，无需修改 Kimi Code，也不需要辅助功能或屏幕录制权限。
+
+## 下载与安装
+
+需要 **macOS 13 或更新版本**，并保持官方 **Kimi Code App 已登录、本地服务正在运行**。v0.1.0 提供 **Apple Silicon（M 系列）ZIP**；Intel Mac 尚未验证。
+
+1. 从[下载页](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)获取 Apple Silicon ZIP 并解压。
+2. 将 `Kimi Usage.app` 放入「应用程序」文件夹。
+3. 打开 Kimi Code 并确认已登录，再双击 `Kimi Usage.app`。卡片会显示在 Kimi 窗口旁。
+
+应用尚未进行 Apple 公证。首次打开被 macOS 拦截时，前往「系统设置 → 隐私与安全」，在本次拦截提示旁选择「仍要打开」，再按系统提示确认。
+
+## 使用
+
+右键点击卡片即可管理：
+
+- **附着位置**：选择四角或「自由」。固定模式会在 Kimi 隐藏、最小化或退出时收起；自由模式保留标题，可拖动，且不要求 Kimi 窗口可见。
+- **显示设置**：背景区域调整背景颜色与透明度；额度条区域设置渐变、档位边界、emoji 和颜色。保存后立即应用，取消不会改变已保存设置。
+- **立即刷新／退出**：手动读取最新额度，或关闭工具。
+
+额度约每 60 秒自动刷新，重置倒计时每分钟更新。底部的「更新」是最近一次成功读取数据的时间；读取失败会保留上次真实读数并提示「更新失败」。账号未返回的额度或重置时间会标注「未提供」。
+
+## 隐私与兼容性
+
+用量通过本机的 Kimi 官方桌面服务读取。本工具不读取聊天内容，不上传用量或会话数据；登录与账号续期由 Kimi Code 处理。
+
+已验证 **Kimi Code 1.0.4、默认界面缩放**。Kimi 更新或改变页面缩放可能影响数据读取与卡片留距；若出现问题，可在[Issues](https://github.com/Rabbitmeaw/kimi-code-usage-macos/issues)中提供 Kimi 版本和现象。
+
+源码构建、数据来源与诊断方法见[开发文档](docs/DEVELOPMENT.md)。项目采用 [MIT License](LICENSE)；附带的 Unicode emoji 数据保留[第三方许可](THIRD_PARTY_LICENSES/Unicode-LICENSE.txt)。

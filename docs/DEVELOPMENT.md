@@ -1,0 +1,95 @@
+# 开发说明
+
+本项目是 SwiftUI／AppKit 实现的 macOS 原生窗口伴随工具。面向普通用户的功能与安装方法见 [README](../README.md)。
+
+## 环境与构建
+
+需要 macOS 13+、Swift 5.9+，以及 Xcode 或 Command Line Tools。没有第三方运行时依赖。发布 ZIP 面向 Apple Silicon；Intel 构建与运行尚未验证。
+
+在仓库根目录执行：
+
+```sh
+bash scripts/test-core.sh
+zsh scripts/build-app.sh
+```
+
+构建产物为 `dist/Kimi Usage.app`。脚本使用 Swift release 构建，移除调试符号和本机源码路径，将 MIT 与 Unicode 许可复制至 App 资源目录，再执行签名与签名校验。默认使用 ad-hoc 签名，也可通过 `CODESIGN_IDENTITY` 指定签名身份。当前发布包未进行 Apple 公证。
+
+`Tests/CoreChecks.swift` 包含 26 组核心检查，由独立 Swift runner 执行，无需 XCTest。覆盖内容包括：
+
+- Desktop usage 数据结构、错误状态、缺失额度和 loopback 地址过滤。
+- 重置时间解析、按分钟向上取整，以及小时／天数格式。
+- 多显示器坐标转换、四角边界、目标窗口过滤和安装样式计算。
+- 3～6 档颜色映射、边界选择、单 emoji 校验及无效输入。
+- 旧版配置兼容、背景颜色／不透明度校验和显示设置 JSON 往返。
+
+这些检查覆盖数据与计算逻辑。发布前还需实际确认原生菜单、系统取色器、窗口跟随、遮挡、自由拖动，以及保存和重启恢复。
+
+## 代码结构
+
+| 文件 | 责任 |
+| --- | --- |
+| `QuotaClient.swift` | 定位 Desktop 本地服务、读取并解析额度 |
+| `Models.swift` | 额度快照与重置倒计时格式 |
+| `UsageStore.swift`、`UsageView.swift` | 显示状态、额度卡与按分钟更新 |
+| `AppController.swift` | 原生菜单、刷新、窗口附着和设置保存 |
+| `WindowGeometry.swift`、`KimiWindowLocator.swift` | 目标窗口定位与坐标计算 |
+| `WindowStyleReader.swift` | 从 Kimi 安装样式计算上下留距 |
+| `QuotaBandSettings.swift`、`BandSettingsWindow.swift` | 档位模型、颜色和设置草稿 |
+| `EmojiCatalog.swift` | Unicode emoji 序列白名单 |
+
+## 数据来源与刷新
+
+默认读取 `~/.kimi-code`，也支持 `KIMI_CODE_HOME` 环境变量。客户端从 `server/instances` 下的实例记录定位官方 Desktop 服务，使用 `server.token` 中的本地服务 token 请求：
+
+```text
+GET /api/v1/oauth/usage?provider=managed:kimi-code
+```
+
+只接受 localhost、127.0.0.1 或 ::1 的有效端口地址。请求使用临时 URLSession；本工具不读取 OAuth 凭证、不保存或打印 token、不读取会话正文，也不直接访问第三方服务器。账号登录和续期由官方服务负责。
+
+界面将 `usedRatio` 换算成剩余百分比，并读取各额度窗口的 `resetAt`。未提供的额度保持缺失状态，不以 0% 代替。成功请求后才更新快照时间；失败保留旧快照并显示错误。
+
+用量刷新间隔为 60 秒；卡片重新出现时，若上次数据已超过 60 秒，会立即刷新。倒计时使用 TimelineView 每分钟重算：5 小时窗口为 `0h00m`，7 天窗口为 `0d00h00m`，不足一天仍保留 `0d`。倒计时变化不会改写最近成功更新时间。
+
+## 窗口与布局
+
+卡片尺寸为 203×117pt。固定四角时隐藏标题、跟随 Kimi 窗口，失去前台焦点后允许其他应用正常遮挡；自由模式保留标题、使用浮动窗口层级并支持整卡拖动。右键菜单由独立 NSMenu 显示，可展开到卡片边界外。
+
+无需 Accessibility 或屏幕录制权限。窗口定位基于系统窗口列表；上下留距读取本机 Kimi 安装包 `Contents/Resources/desktop-dist/index.html` 引用的样式，计算顶部栏、账户区域尺寸、内边距和边框。每 30 秒以及 Kimi 实例或显示器变化时重新读取。
+
+布局解析以 Kimi Code 1.0.4 默认页面缩放为已验证范围，不测量临时页面状态或手动缩放后的实际渲染高度。样式无法识别时，会提供重新读取入口并暂放在窗口侧边中部；适配新版本时应更新解析和相应样式 fixture。
+
+## 配置与显示设置
+
+配置通过 UserDefaults 保存。档位与外观使用 `quotaBandSettings.v1`，位置模式使用 `attachmentCorner`，自由坐标使用 `freePanelOrigin`。移动项目目录或升级 App 时，应保持 Bundle Identifier 和配置键稳定。
+
+档位数限制为 3～6；最低下限为 0，其余下限严格递增。每档包含一个有效 emoji，可选自定义 RGB 颜色；未自定义时按档位数使用默认调色顺序。两条额度条共用同一设置。
+
+颜色通道和背景不透明度均使用 0～1 的有限数值。设置窗口显示的是透明度，换算关系为「不透明度 = 1 − 透明度」。渐变由当前档位颜色与白色混合后过渡至原色，额度条本身保持不透明，与背景透明度独立。
+
+设置窗口使用 ObservableObject 草稿；保存通过校验后才写入，取消或关闭不会修改已保存配置。「恢复默认」会同时重置档位、自定义颜色、背景和渐变。旧配置缺少外观字段时使用默认值，保留原有阈值与 emoji。
+
+## 诊断
+
+构建后在仓库根目录执行：
+
+```sh
+"dist/Kimi Usage.app/Contents/MacOS/KimiUsage" --check-usage
+"dist/Kimi Usage.app/Contents/MacOS/KimiUsage" --diagnose-window
+"dist/Kimi Usage.app/Contents/MacOS/KimiUsage" --diagnose-stack
+```
+
+- `--check-usage`：输出 5 小时／7 天已用百分比和成功读取时间。
+- `--diagnose-window`：输出前台应用、目标窗口几何、样式留距及四角位置。
+- `--diagnose-stack`：输出卡片、Kimi 和前台应用的窗口排列、层级及几何。
+
+上述命令不打印 token 或窗口正文。用诊断结果区分服务未运行、登录过期、额度格式变化和布局解析失败，再针对相应模块修改。
+
+## 许可与发布
+
+项目代码采用 [MIT License](../LICENSE)。emoji 校验数据来自 [Unicode Emoji 17.0 emoji-test.txt](https://www.unicode.org/Public/17.0.0/emoji/emoji-test.txt) 的 fully-qualified 与 minimally-qualified 序列；排除 component 和 unqualified 条目。源文件说明与数据哈希保留在 `EmojiCatalog.swift` 顶部。
+
+Unicode 数据受 [Unicode License V3](../THIRD_PARTY_LICENSES/Unicode-LICENSE.txt) 约束。分发源码与 App 时需保留该许可，构建脚本已将其复制到 App 资源中；MIT 许可不替代 Unicode 的第三方许可。
+
+发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.1.0 发布 Apple Silicon ZIP；发布时核对版本号、目标架构、签名校验、第三方许可和压缩包内容。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。

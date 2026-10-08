@@ -1,0 +1,8 @@
+.build/
+.swiftpm/
+dist/
+.local/
+.omc/
+.DS_Store
+*.xcuserstate
+xcuserdata/
