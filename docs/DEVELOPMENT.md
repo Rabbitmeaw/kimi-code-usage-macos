@@ -15,6 +15,8 @@ zsh scripts/build-app.sh
 
 构建产物为 `dist/Kimi Usage.app`。更新运行中的版本时可用 `APP_OUTPUT_PATH` 指定新的打包位置，避免覆盖正在运行的可执行文件。脚本使用 Swift release 构建，移除调试符号和本机源码路径，将 MIT 与 Unicode 许可复制至 App 资源目录，再执行签名与签名校验。默认使用 ad-hoc 签名，也可通过 `CODESIGN_IDENTITY` 指定签名身份。当前发布包未进行 Apple 公证。
 
+应用图标源文件为透明背景的 `Resources/AppIcon.png`。构建脚本使用 macOS 自带的 `sips` 生成 16～512pt 的标准与 @2x 图像，在 `.build/app-icon/` 中通过 `iconutil` 转为 `AppIcon.icns`，并在签名前写入主 App 和 watcher 的资源目录。源 PNG 保留透明通道；当前 macOS 可能为应用图标附加系统圆角底板，实际显示由系统处理。
+
 `Tests/CoreChecks.swift` 包含 33 组核心检查，由独立 Swift runner 执行，无需 XCTest。覆盖内容包括：
 
 - Desktop usage 数据结构、错误状态、缺失额度和 loopback 地址过滤。
@@ -107,4 +109,4 @@ v0.2.1 将固定模式窗口定位间隔调整为1秒，容差0.1秒；移动、
 
 Unicode 数据受 [Unicode License V3](../THIRD_PARTY_LICENSES/Unicode-LICENSE.txt) 约束。分发源码与 App 时需保留该许可，构建脚本已将其复制到 App 资源中；MIT 许可不替代 Unicode 的第三方许可。
 
-发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.1 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。
+发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.2 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、图标、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。

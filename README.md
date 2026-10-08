@@ -21,7 +21,7 @@
 
 ## 下载与安装
 
-需要 **macOS 13 或更新版本**。查看额度时，请打开官方 **Kimi Code App 并登录**。v0.2.1 提供 **Apple Silicon（M 系列）ZIP**；Intel Mac 尚未验证。
+需要 **macOS 13 或更新版本**。查看额度时，请打开官方 **Kimi Code App 并登录**。v0.2.2 提供 **Apple Silicon（M 系列）ZIP**；Intel Mac 尚未验证。
 
 1. 从[下载页](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)获取 Apple Silicon ZIP 并解压。
 2. 将 `Kimi Usage.app` 放入「应用程序」文件夹，即 `/Applications/Kimi Usage.app`。
