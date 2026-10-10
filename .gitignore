@@ -6,3 +6,26 @@ dist/
 .DS_Store
 *.xcuserstate
 xcuserdata/
+
+# Local checks and investigation notes
+/Tests/
+/scripts/test*
+/scripts/verify*
+/todos.md
+/docs/startup-auth-diagnosis.md
+
+# Generated packages, caches, and temporary files
+*.app/
+*.dSYM/
+*.zip
+*.dmg
+__pycache__/
+*.py[cod]
+*.log
+*.tmp
+*.swp
+*~
+
+# Local Kimi service credentials
+/.kimi-code/
+server.token
