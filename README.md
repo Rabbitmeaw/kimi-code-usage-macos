@@ -21,9 +21,9 @@
 
 ## 下载与安装
 
-需要 **macOS 13 或更新版本**。查看额度时，请打开官方 **Kimi Code App 并登录**。v0.2.3 提供 **Apple Silicon（M 系列）ZIP**；Intel Mac 尚未验证。
+需要 **macOS 13 或更新版本**。查看额度时，请打开官方 **Kimi Code App 并登录**。v0.2.4 提供 **Apple Silicon（M 系列）ZIP**；Intel Mac 尚未验证。
 
-当前 `main` 源码已包含启动等待和缺失本地令牌的修复，现有 v0.2.3 下载包尚未包含。需要使用这些修复时，请按[开发文档](docs/DEVELOPMENT.md#环境与构建)从源码构建。
+v0.2.4 修复了 Kimi 启动时服务尚未就绪、以及首次使用缺失本地服务令牌导致的额度获取失败。使用旧版时，请下载新版 ZIP，先退出 Kimi Usage，再替换「应用程序」中的 App 并重新打开；已有显示设置会保留。
 
 1. 从[下载页](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)获取 Apple Silicon ZIP 并解压。
 2. 将 `Kimi Usage.app` 放入「应用程序」文件夹，即 `/Applications/Kimi Usage.app`。

@@ -129,6 +129,6 @@ v0.2.1 将固定模式窗口定位间隔调整为1秒，容差0.1秒；移动、
 
 Unicode 数据受 [Unicode License V3](../THIRD_PARTY_LICENSES/Unicode-LICENSE.txt) 约束。分发源码与 App 时需保留该许可，构建脚本已将其复制到 App 资源中；MIT 许可不替代 Unicode 的第三方许可。
 
-发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.3 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、图标、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。
+发布仓库为 [Rabbitmeaw/kimi-code-usage-macos](https://github.com/Rabbitmeaw/kimi-code-usage-macos)，下载入口为 [Releases](https://github.com/Rabbitmeaw/kimi-code-usage-macos/releases/latest)。v0.2.4 发布 Apple Silicon ZIP；发布时核对主 App 与 watcher 的版本、图标、目标架构、签名校验、第三方许可和压缩包内容，并验证从 `/Applications` 安装后首次打开、后台唤起及卸载清理。不要将本地服务记录、凭证、个人配置或测试运行产物提交到仓库。
 
-当前源码包含启动重试与缺失令牌初始化，公开 v0.2.3 安装包尚未包含这些修复。构建脚本的版本标识仍为 0.2.3；仓库提交与推送不等同于发布新 Release。
+v0.2.4 包含启动重试与缺失令牌初始化，主 App 和 watcher 的版本号均为 0.2.4，构建号为 6。安装包与 SHA256SUMS 随 Release 发布，构建产物和本地测试文件保持忽略。
